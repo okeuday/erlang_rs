@@ -1,7 +1,7 @@
 Erlang External Term Format for Rust
 ====================================
 
-Provides all encoding and decoding for the Erlang External Term Format
+Provides all ~~encoding~~(*WORK IN PROGRESS!*) and decoding for the Erlang External Term Format
 (as defined at [http://erlang.org/doc/apps/erts/erl_ext_dist.html](http://erlang.org/doc/apps/erts/erl_ext_dist.html))
 in a single Rust crate.
 
