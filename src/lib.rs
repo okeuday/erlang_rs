@@ -1,5 +1,5 @@
-//-*-Mode:rust;coding:utf-8;tab-width:2;c-basic-offset:2;indent-tabs-mode:()-*-
-//ex: set ft=rust fenc=utf-8 sts=2 ts=2 sw=2 et nomod:
+//-*-Mode:rust;coding:utf-8;tab-width:4;c-basic-offset:4;indent-tabs-mode:()-*-
+//ex: set ft=rust fenc=utf-8 sts=4 ts=4 sw=4 et nomod:
 
 // MIT License
 //
@@ -205,6 +205,43 @@ where I: std::slice::SliceIndex<[u8]>, {
     }
 }
 
+fn pack_u16(value: u16, data: &mut Vec<u8>) {
+    let byte0 = (value >> 8) as u8;
+    let byte1 = (value & 0xff) as u8;
+    data.push(byte0);
+    data.push(byte1);
+}
+
+fn pack_u32(value: u32, data: &mut Vec<u8>) {
+    let byte0 = (value >> 24) as u8;
+    let byte1 = ((value >> 16) & 0xff) as u8;
+    let byte2 = ((value >> 8) & 0xff) as u8;
+    let byte3 = (value & 0xff) as u8;
+    data.push(byte0);
+    data.push(byte1);
+    data.push(byte2);
+    data.push(byte3);
+}
+
+fn pack_u64(value: u64, data: &mut Vec<u8>) {
+    let byte0 = (value >> 56) as u8;
+    let byte1 = ((value >> 48) & 0xff) as u8;
+    let byte2 = ((value >> 40) & 0xff) as u8;
+    let byte3 = ((value >> 32) & 0xff) as u8;
+    let byte4 = ((value >> 24) & 0xff) as u8;
+    let byte5 = ((value >> 16) & 0xff) as u8;
+    let byte6 = ((value >> 8) & 0xff) as u8;
+    let byte7 = (value & 0xff) as u8;
+    data.push(byte0);
+    data.push(byte1);
+    data.push(byte2);
+    data.push(byte3);
+    data.push(byte4);
+    data.push(byte5);
+    data.push(byte6);
+    data.push(byte7);
+}
+
 fn unpack_u16(i: &mut usize, data: &[u8]) -> Result<u16> {
     let byte0 = *slice_get(data, *i)?;
     let byte1 = *slice_get(data, *i + 1)?;
@@ -269,9 +306,11 @@ pub fn binary_to_term(data: &[u8]) -> Result<OtpErlangTerm> {
     }
 }
 
-pub fn term_to_binary(_term: OtpErlangTerm) -> Result<Vec<u8>> {
-    //XXX
-    return Err(ErrorKind::ParseError("not impl").into());
+pub fn term_to_binary(term: &OtpErlangTerm) -> Result<Vec<u8>> {
+    let mut data: Vec<u8> = Vec::new();
+    data.push(TAG_VERSION);
+    let () = term_to_binary_(term, &mut data)?;
+    Ok(data)
 }
 
 fn binary_to_term_(i: &mut usize, data: &[u8]) -> Result<OtpErlangTerm> {
@@ -449,6 +488,7 @@ fn binary_to_term_(i: &mut usize, data: &[u8]) -> Result<OtpErlangTerm> {
             let creation = slice_get(data, *i..*i + creation_size)?;
             *i += creation_size;
             let id = slice_get(data, *i..*i + j)?;
+            *i += j;
             Ok(OtpErlangTerm::OtpErlangReference(Reference {
                 node_tag,
                 node,
@@ -519,8 +559,8 @@ fn binary_to_term_(i: &mut usize, data: &[u8]) -> Result<OtpErlangTerm> {
     }
 }
 
-fn binary_to_term_sequence(i: &mut usize, length: usize, data: &[u8]) ->
-Result<Vec<OtpErlangTerm>> {
+fn binary_to_term_sequence(i: &mut usize, length: usize,
+                           data: &[u8]) -> Result<Vec<OtpErlangTerm>> {
     let mut sequence: Vec<OtpErlangTerm> = Vec::new();
     for _ in 0..length {
         sequence.push(binary_to_term_(i, data)?);
@@ -598,6 +638,312 @@ fn binary_to_atom(i: &mut usize, data: &[u8]) -> Result<(u8, Vec<u8>)> {
     }
 }
 
+fn term_to_binary_(term: &OtpErlangTerm,
+                   data: &mut Vec<u8>) -> Result<()> {
+    match term {
+        OtpErlangTerm::OtpErlangInteger(value) => {
+            integer_to_binary(*value, data)
+        },
+        OtpErlangTerm::OtpErlangFloat(value) => {
+            data.push(TAG_NEW_FLOAT_EXT);
+            pack_u64(value.bits, data);
+            Ok(())
+        },
+        OtpErlangTerm::OtpErlangAtom(value) => {
+            atom_to_binary(value, data)
+        },
+        OtpErlangTerm::OtpErlangAtomUTF8(value) => {
+            atom_utf8_to_binary(value, data)
+        },
+        OtpErlangTerm::OtpErlangAtomCacheRef(value) => {
+            data.push(TAG_ATOM_CACHE_REF);
+            data.push(*value);
+            Ok(())
+        },
+        OtpErlangTerm::OtpErlangAtomBool(value) => {
+            if *value {
+                atom_utf8_to_binary(&b"true".to_vec(), data)
+            }
+            else {
+                atom_utf8_to_binary(&b"false".to_vec(), data)
+            }
+        },
+        OtpErlangTerm::OtpErlangString(value) => {
+            string_to_binary(value, data)
+        },
+        OtpErlangTerm::OtpErlangBinary(value) => {
+            binary_bits_to_binary(value, 8, data)
+        },
+        OtpErlangTerm::OtpErlangBinaryBits(value, bits) => {
+            binary_bits_to_binary(value, *bits, data)
+        },
+        OtpErlangTerm::OtpErlangList(value) => {
+            list_to_binary(value, false, data)
+        },
+        OtpErlangTerm::OtpErlangListImproper(value) => {
+            list_to_binary(value, true, data)
+        },
+        OtpErlangTerm::OtpErlangTuple(value) => {
+            tuple_to_binary(value, data)
+        },
+        OtpErlangTerm::OtpErlangMap(value) => {
+            map_to_binary(value, data)
+        },
+        OtpErlangTerm::OtpErlangPid(value) => {
+            pid_to_binary(value, data)
+        },
+        OtpErlangTerm::OtpErlangPort(value) => {
+            port_to_binary(value, data)
+        },
+        OtpErlangTerm::OtpErlangReference(value) => {
+            reference_to_binary(value, data)
+        },
+        OtpErlangTerm::OtpErlangFunction(value) => {
+            function_to_binary(value, data)
+        },
+    }
+}
+
+fn string_to_binary(value: &Vec<u8>, data: &mut Vec<u8>) -> Result<()> {
+    let length = value.len();
+    if length == 0 {
+        data.push(TAG_NIL_EXT);
+        Ok(())
+    }
+    else if length <= 65535 {
+        data.push(TAG_STRING_EXT);
+        pack_u16(length as u16, data);
+        data.extend(value);
+        Ok(())
+    }
+    else if length <= 4294967295 {
+        data.push(TAG_LIST_EXT);
+        pack_u32(length as u32, data);
+        for c in value.iter() {
+            data.push(TAG_SMALL_INTEGER_EXT);
+            data.push(*c);
+        }
+        data.push(TAG_NIL_EXT);
+        Ok(())
+    }
+    else {
+        Err(ErrorKind::OutputError("u32 overflow").into())
+    }
+}
+
+fn tuple_to_binary(value: &Vec<OtpErlangTerm>,
+                   data: &mut Vec<u8>) -> Result<()> {
+    let length = value.len();
+    if length <= 255 {
+        data.push(TAG_SMALL_TUPLE_EXT);
+        data.push(length as u8);
+        for term in value.iter() {
+            let _ = term_to_binary_(term, data)?;
+        }
+        Ok(())
+    }
+    else if length <= 4294967295 {
+        data.push(TAG_LARGE_TUPLE_EXT);
+        pack_u32(length as u32, data);
+        for term in value.iter() {
+            let _ = term_to_binary_(term, data)?;
+        }
+        Ok(())
+    }
+    else {
+        Err(ErrorKind::OutputError("u32 overflow").into())
+    }
+}
+
+fn list_to_binary(value: &Vec<OtpErlangTerm>, improper: bool,
+                  data: &mut Vec<u8>) -> Result<()> {
+    let length = value.len();
+    if length == 0 {
+        data.push(TAG_NIL_EXT);
+        Ok(())
+    }
+    else if length <= 4294967295 {
+        data.push(TAG_LIST_EXT);
+        if improper {
+            pack_u32((length - 1) as u32, data);
+        }
+        else {
+            pack_u32(length as u32, data);
+        }
+        for term in value.iter() {
+            let _ = term_to_binary_(term, data)?;
+        }
+        if ! improper {
+            data.push(TAG_NIL_EXT);
+        }
+        Ok(())
+    }
+    else {
+        Err(ErrorKind::OutputError("u32 overflow").into())
+    }
+}
+
+fn integer_to_binary(value: i32, data: &mut Vec<u8>) -> Result<()> {
+    if value >= 0 && value <= 255 {
+        data.push(TAG_SMALL_INTEGER_EXT);
+        data.push(value as u8);
+        Ok(())
+    }
+    else {
+        data.push(TAG_INTEGER_EXT);
+        pack_u32(value as u32, data);
+        Ok(())
+    }
+}
+
+fn atom_to_binary(value: &Vec<u8>, data: &mut Vec<u8>) -> Result<()> {
+    // deprecated
+    // (not used in Erlang/OTP 26, i.e., minor_version 2)
+    let length = value.len();
+    if length <= 255 {
+        data.push(TAG_SMALL_ATOM_EXT);
+        data.push(length as u8);
+        data.extend(value);
+        Ok(())
+    }
+    else if length <= 65535 {
+        data.push(TAG_ATOM_EXT);
+        pack_u16(length as u16, data);
+        data.extend(value);
+        Ok(())
+    }
+    else {
+        Err(ErrorKind::OutputError("u16 overflow").into())
+    }
+}
+
+fn atom_utf8_to_binary(value: &Vec<u8>, data: &mut Vec<u8>) -> Result<()> {
+    let length = value.len();
+    if length <= 255 {
+        data.push(TAG_SMALL_ATOM_UTF8_EXT);
+        data.push(length as u8);
+        data.extend(value);
+        Ok(())
+    }
+    else if length <= 65535 {
+        data.push(TAG_ATOM_UTF8_EXT);
+        pack_u16(length as u16, data);
+        data.extend(value);
+        Ok(())
+    }
+    else {
+        Err(ErrorKind::OutputError("u16 overflow").into())
+    }
+}
+
+fn binary_bits_to_binary(value: &Vec<u8>, bits: u8,
+                         data: &mut Vec<u8>) -> Result<()> {
+    let length = value.len();
+    if bits == 0 {
+        Err(ErrorKind::OutputError("invalid OtpErlangBinaryBits").into())
+    }
+    else if length <= 4294967295 {
+        if bits != 8 {
+            data.push(TAG_BIT_BINARY_EXT);
+            pack_u32(length as u32, data);
+            data.push(bits);
+        }
+        else {
+            data.push(TAG_BINARY_EXT);
+            pack_u32(length as u32, data);
+        }
+        data.extend(value);
+        Ok(())
+    }
+    else {
+        Err(ErrorKind::OutputError("u32 overflow").into())
+    }
+}
+
+fn map_to_binary(value: &BTreeMap<OtpErlangTerm, OtpErlangTerm>,
+                 data: &mut Vec<u8>) -> Result<()> {
+    let length = value.len();
+    if length <= 4294967295 {
+        data.push(TAG_MAP_EXT);
+        pack_u32(length as u32, data);
+        for (k, v) in value {
+            let () = term_to_binary_(k, data)?;
+            let () = term_to_binary_(v, data)?;
+        }
+        Ok(())
+    }
+    else {
+        Err(ErrorKind::OutputError("u32 overflow").into())
+    }
+}
+
+fn pid_to_binary(value: &Pid, data: &mut Vec<u8>) -> Result<()> {
+    if value.creation.len() == 4 {
+        data.push(TAG_NEW_PID_EXT);
+    }
+    else {
+        data.push(TAG_PID_EXT);
+    }
+    data.push(value.node_tag);
+    data.extend(&value.node);
+    data.extend(&value.id);
+    data.extend(&value.serial);
+    data.extend(&value.creation);
+    Ok(())
+}
+
+fn port_to_binary(value: &Port, data: &mut Vec<u8>) -> Result<()> {
+    if value.id.len() == 8 {
+        data.push(TAG_V4_PORT_EXT);
+    }
+    else if value.creation.len() == 4 {
+        data.push(TAG_NEW_PORT_EXT);
+    }
+    else {
+        data.push(TAG_PORT_EXT);
+    }
+    data.push(value.node_tag);
+    data.extend(&value.node);
+    data.extend(&value.id);
+    data.extend(&value.creation);
+    Ok(())
+}
+
+fn reference_to_binary(value: &Reference, data: &mut Vec<u8>) -> Result<()> {
+    let length = value.id.len() / 4;
+    if length == 0 {
+        data.push(TAG_REFERENCE_EXT);
+        data.push(value.node_tag);
+        data.extend(&value.node);
+        data.extend(&value.id);
+        data.extend(&value.creation);
+        Ok(())
+    }
+    else if length <= 65535 {
+        if value.creation.len() == 4 {
+            data.push(TAG_NEWER_REFERENCE_EXT);
+        }
+        else {
+            data.push(TAG_NEW_REFERENCE_EXT);
+        }
+        pack_u16(length as u16, data);
+        data.push(value.node_tag);
+        data.extend(&value.node);
+        data.extend(&value.creation);
+        data.extend(&value.id);
+        Ok(())
+    }
+    else {
+        Err(ErrorKind::OutputError("u16 overflow").into())
+    }
+}
+
+fn function_to_binary(value: &Function, data: &mut Vec<u8>) -> Result<()> {
+    data.push(value.tag);
+    data.extend(&value.value);
+    Ok(())
+}
+
 // MIT LICENSE (of tests below)
 //
 // Copyright (c) 2017-2023 Michael Truog <mjtruog at protonmail dot com>
@@ -625,7 +971,132 @@ fn binary_to_atom(i: &mut usize, data: &[u8]) -> Result<(u8, Vec<u8>)> {
 mod tests {
     use crate::*;
 
-    //XXX add test_* type functions
+    #[test]
+    fn test_pid() {
+        let pid1 = OtpErlangTerm::OtpErlangPid(Pid {
+            node_tag: 100,
+            node: vec![
+                b"\x00\x0d\x6e\x6f\x6e\x6f\x64\x65".to_vec(),
+                b"\x40\x6e\x6f\x68\x6f\x73\x74".to_vec(),
+            ].into_iter().flatten().collect::<Vec<u8>>(),
+            id: b"\x00\x00\x00\x3b".to_vec(),
+            serial: b"\x00\x00\x00\x00".to_vec(),
+            creation: b"\x00".to_vec(),
+        });
+        let binary1 = vec![
+            b"\x83\x67\x64\x00\x0D\x6E\x6F\x6E\x6F\x64\x65".to_vec(),
+            b"\x40\x6E\x6F\x68\x6F\x73\x74\x00\x00\x00\x3B".to_vec(),
+            b"\x00\x00\x00\x00\x00".to_vec(),
+        ].into_iter().flatten().collect::<Vec<u8>>();
+        let pid2 = OtpErlangTerm::OtpErlangPid(Pid {
+            node_tag: 119,
+            node: vec![
+                b"\x0D\x6E\x6F\x6E\x6F\x64\x65\x40".to_vec(),
+                b"\x6E\x6F\x68\x6F\x73\x74".to_vec(),
+            ].into_iter().flatten().collect::<Vec<u8>>(),
+            id: b"\x00\x00\x00\x50".to_vec(),
+            serial: b"\x00\x00\x00\x00".to_vec(),
+            creation: b"\x00".to_vec(),
+        });
+        let binary2 = vec![
+            b"\x83\x67\x77\x0D\x6E\x6F\x6E\x6F\x64\x65\x40".to_vec(),
+            b"\x6E\x6F\x68\x6F\x73\x74\x00\x00\x00\x50\x00".to_vec(),
+            b"\x00\x00\x00\x00".to_vec(),
+        ].into_iter().flatten().collect::<Vec<u8>>();
+        assert_eq!(binary_to_term(binary1.as_slice()).unwrap(), pid1);
+        assert_eq!(term_to_binary(&pid1).unwrap(), binary1.as_slice());
+        assert_eq!(binary_to_term(binary2.as_slice()).unwrap(), pid2);
+        assert_eq!(term_to_binary(&pid2).unwrap(), binary2.as_slice());
+        let pid_old_binary = vec![
+            b"\x83\x67\x64\x00\x0D\x6E\x6F\x6E\x6F\x64\x65".to_vec(),
+            b"\x40\x6E\x6F\x68\x6F\x73\x74\x00\x00\x00\x4E".to_vec(),
+            b"\x00\x00\x00\x00\x00".to_vec(),
+        ].into_iter().flatten().collect::<Vec<u8>>();
+        let pid_old = binary_to_term(pid_old_binary.as_slice()).unwrap();
+        assert_eq!(term_to_binary(&pid_old).unwrap(),
+                   pid_old_binary.as_slice());
+        let pid_new_binary = vec![
+            b"\x83\x58\x64\x00\x0D\x6E\x6F\x6E\x6F\x64\x65".to_vec(),
+            b"\x40\x6E\x6F\x68\x6F\x73\x74\x00\x00\x00\x4E".to_vec(),
+            b"\x00\x00\x00\x00\x00\x00\x00\x00".to_vec(),
+        ].into_iter().flatten().collect::<Vec<u8>>();
+        let pid_new = binary_to_term(pid_new_binary.as_slice()).unwrap();
+        assert_eq!(term_to_binary(&pid_new).unwrap(),
+                   pid_new_binary.as_slice());
+    }
+
+    #[test]
+    fn test_port() {
+        let port_old_binary = vec![
+            b"\x83\x66\x64\x00\x0D\x6E\x6F\x6E\x6F\x64\x65".to_vec(),
+            b"\x40\x6E\x6F\x68\x6F\x73\x74\x00\x00\x00\x06\x00".to_vec(),
+        ].into_iter().flatten().collect::<Vec<u8>>();
+        let port_old = binary_to_term(port_old_binary.as_slice()).unwrap();
+        assert_eq!(term_to_binary(&port_old).unwrap(),
+                   port_old_binary.as_slice());
+        let port_new_binary = vec![
+            b"\x83\x59\x64\x00\x0D\x6E\x6F\x6E\x6F\x64\x65".to_vec(),
+            b"\x40\x6E\x6F\x68\x6F\x73\x74\x00\x00\x00\x06".to_vec(),
+            b"\x00\x00\x00\x00".to_vec(),
+        ].into_iter().flatten().collect::<Vec<u8>>();
+        let port_new = binary_to_term(port_new_binary.as_slice()).unwrap();
+        assert_eq!(term_to_binary(&port_new).unwrap(),
+                   port_new_binary.as_slice());
+    }
+
+    #[test]
+    fn test_reference() {
+        let reference1 = OtpErlangTerm::OtpErlangReference(Reference {
+            node_tag: 100,
+            node: vec![
+                b"\x00\x0d\x6e\x6f\x6e\x6f\x64\x65\x40\x6e".to_vec(),
+                b"\x6f\x68\x6f\x73\x74".to_vec(),
+            ].into_iter().flatten().collect::<Vec<u8>>(),
+            id: b"\x00\x00\x00\xaf\x00\x00\x00\x03\x00\x00\x00\x00".to_vec(),
+            creation: b"\x00".to_vec(),
+        });
+        let binary1 = vec![
+            b"\x83\x72\x00\x03\x64\x00\x0D\x6E\x6F\x6E\x6F".to_vec(),
+            b"\x64\x65\x40\x6E\x6F\x68\x6F\x73\x74\x00\x00".to_vec(),
+            b"\x00\x00\xAF\x00\x00\x00\x03\x00\x00\x00\x00".to_vec(),
+        ].into_iter().flatten().collect::<Vec<u8>>();
+        assert_eq!(binary_to_term(binary1.as_slice()).unwrap(), reference1);
+        assert_eq!(term_to_binary(&reference1).unwrap(), binary1.as_slice());
+        let ref_new_binary = vec![
+            b"\x83\x72\x00\x03\x64\x00\x0D\x6E\x6F\x6E\x6F".to_vec(),
+            b"\x64\x65\x40\x6E\x6F\x68\x6F\x73\x74\x00\x00".to_vec(),
+            b"\x03\xE8\x4E\xE7\x68\x00\x02\xA4\xC8\x53\x40".to_vec(),
+        ].into_iter().flatten().collect::<Vec<u8>>();
+        let ref_new = binary_to_term(ref_new_binary.as_slice()).unwrap();
+        assert_eq!(term_to_binary(&ref_new).unwrap(),
+                   ref_new_binary.as_slice());
+        let ref_newer_binary = vec![
+            b"\x83\x5A\x00\x03\x64\x00\x0D\x6E\x6F\x6E\x6F".to_vec(),
+            b"\x64\x65\x40\x6E\x6F\x68\x6F\x73\x74\x00\x00".to_vec(),
+            b"\x00\x00\x00\x01\xAC\x03\xC7\x00\x00\x04\xBB".to_vec(),
+            b"\xB2\xCA\xEE".to_vec(),
+        ].into_iter().flatten().collect::<Vec<u8>>();
+        let ref_newer = binary_to_term(ref_newer_binary.as_slice()).unwrap();
+        assert_eq!(term_to_binary(&ref_newer).unwrap(),
+                   ref_newer_binary.as_slice());
+    }
+
+    #[test]
+    fn test_function() {
+        let function1 = OtpErlangTerm::OtpErlangFunction(Function {
+            tag: 113,
+            value: vec![
+                b"\x64\x00\x05\x6c\x69\x73\x74\x73\x64\x00".to_vec(),
+                b"\x06\x6d\x65\x6d\x62\x65\x72\x61\x02".to_vec(),
+            ].into_iter().flatten().collect::<Vec<u8>>(),
+        });
+        let binary1 = vec![
+            b"\x83\x71\x64\x00\x05\x6C\x69\x73\x74\x73\x64".to_vec(),
+            b"\x00\x06\x6D\x65\x6D\x62\x65\x72\x61\x02".to_vec(),
+        ].into_iter().flatten().collect::<Vec<u8>>();
+        assert_eq!(binary_to_term(binary1.as_slice()).unwrap(), function1);
+        assert_eq!(term_to_binary(&function1).unwrap(), binary1.as_slice());
+    }
 
     #[test]
     fn test_decode_basic() {
@@ -836,6 +1307,401 @@ mod tests {
             OtpErlangTerm::OtpErlangFloat(1.5.into()));
     }
 
-    //XXX add test_encode_* term_to_binary functions
+    #[test]
+    fn test_decode_map() {
+        assert_eq!(binary_to_term(b"\x83t").unwrap_err(),
+                   ErrorKind::ParseError("missing data").into());
+        assert_eq!(binary_to_term(b"\x83t\x00").unwrap_err(),
+                   ErrorKind::ParseError("missing data").into());
+        assert_eq!(binary_to_term(b"\x83t\x00\x00").unwrap_err(),
+                   ErrorKind::ParseError("missing data").into());
+        assert_eq!(binary_to_term(b"\x83t\x00\x00\x00").unwrap_err(),
+                   ErrorKind::ParseError("missing data").into());
+        assert_eq!(binary_to_term(b"\x83t\x00\x00\x00\x01").unwrap_err(),
+                   ErrorKind::ParseError("missing data").into());
+        assert_eq!(
+            binary_to_term(b"\x83t\x00\x00\x00\x00").unwrap(),
+            OtpErlangTerm::OtpErlangMap(BTreeMap::new()));
+        let mut map1 = BTreeMap::new();
+        map1.insert(OtpErlangTerm::OtpErlangAtom(b"a".to_vec()),
+                    OtpErlangTerm::OtpErlangInteger(1));
+        assert_eq!(
+            binary_to_term(b"\x83t\x00\x00\x00\x01d\x00\x01aa\x01").unwrap(),
+            OtpErlangTerm::OtpErlangMap(map1));
+    }
+
+    #[test]
+    fn test_encode_tuple() {
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangTuple(vec![])).unwrap(),
+            b"\x83h\x00");
+        let tuple1 = OtpErlangTerm::OtpErlangTuple(vec![
+            OtpErlangTerm::OtpErlangTuple(Vec::new()),
+            OtpErlangTerm::OtpErlangTuple(vec![]),
+        ]);
+        assert_eq!(term_to_binary(&tuple1).unwrap(),
+                   b"\x83h\x02h\x00h\x00");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangTuple(vec![
+                OtpErlangTerm::OtpErlangTuple(Vec::new()); 255])).unwrap(),
+            [b"\x83h\xff",
+             b"h\x00".repeat(255).as_slice()].concat());
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangTuple(vec![
+                OtpErlangTerm::OtpErlangTuple(Vec::new()); 256])).unwrap(),
+            [b"\x83i\x00\x00\x01\x00",
+             b"h\x00".repeat(256).as_slice()].concat());
+    }
+
+
+    #[test]
+    fn test_encode_empty_list() {
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![])).unwrap(),
+            b"\x83j");
+    }
+
+    #[test]
+    fn test_encode_string_list() {
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"".to_vec())).unwrap(),
+            b"\x83j");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"\x00".to_vec())).unwrap(),
+            b"\x83k\x00\x01\x00");
+        // concat_bytes! isn't available yet
+        let s = vec![
+            b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r".to_vec(),
+            b"\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a".to_vec(),
+            b"\x1b\x1c\x1d\x1e\x1f !\"#$%&'()*+,-./0123456789:;<=>".to_vec(),
+            b"?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopq".to_vec(),
+            b"rstuvwxyz{|}~\x7f\x80\x81\x82\x83\x84\x85\x86\x87\x88".to_vec(),
+            b"\x89\x8a\x8b\x8c\x8d\x8e\x8f\x90\x91\x92\x93\x94\x95".to_vec(),
+            b"\x96\x97\x98\x99\x9a\x9b\x9c\x9d\x9e\x9f\xa0\xa1\xa2".to_vec(),
+            b"\xa3\xa4\xa5\xa6\xa7\xa8\xa9\xaa\xab\xac\xad\xae\xaf".to_vec(),
+            b"\xb0\xb1\xb2\xb3\xb4\xb5\xb6\xb7\xb8\xb9\xba\xbb\xbc".to_vec(),
+            b"\xbd\xbe\xbf\xc0\xc1\xc2\xc3\xc4\xc5\xc6\xc7\xc8\xc9".to_vec(),
+            b"\xca\xcb\xcc\xcd\xce\xcf\xd0\xd1\xd2\xd3\xd4\xd5\xd6".to_vec(),
+            b"\xd7\xd8\xd9\xda\xdb\xdc\xdd\xde\xdf\xe0\xe1\xe2\xe3".to_vec(),
+            b"\xe4\xe5\xe6\xe7\xe8\xe9\xea\xeb\xec\xed\xee\xef\xf0".to_vec(),
+            b"\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9\xfa\xfb\xfc\xfd".to_vec(),
+            b"\xfe\xff".to_vec(),
+        ].into_iter().flatten().collect::<Vec<u8>>();
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                s.clone())).unwrap(),
+            [b"\x83k\x01\x00", s.as_slice()].concat());
+    }
+
+    #[test]
+    fn test_encode_list_basic() {
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                Vec::new())).unwrap(),
+            b"\x83\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangString(b"".to_vec())])).unwrap(),
+            b"\x83\x6C\x00\x00\x00\x01\x6A\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangInteger(1)])).unwrap(),
+            b"\x83\x6C\x00\x00\x00\x01\x61\x01\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangInteger(255)])).unwrap(),
+            b"\x83\x6C\x00\x00\x00\x01\x61\xFF\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangInteger(256)])).unwrap(),
+            b"\x83\x6C\x00\x00\x00\x01\x62\x00\x00\x01\x00\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangInteger(i32::MAX)])).unwrap(),
+            b"\x83\x6C\x00\x00\x00\x01\x62\x7F\xFF\xFF\xFF\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangInteger(0)])).unwrap(),
+            b"\x83\x6C\x00\x00\x00\x01\x61\x00\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangInteger(-1)])).unwrap(),
+            b"\x83\x6C\x00\x00\x00\x01\x62\xFF\xFF\xFF\xFF\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangInteger(-256)])).unwrap(),
+            b"\x83\x6C\x00\x00\x00\x01\x62\xFF\xFF\xFF\x00\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangInteger(-257)])).unwrap(),
+            b"\x83\x6C\x00\x00\x00\x01\x62\xFF\xFF\xFE\xFF\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangInteger(i32::MIN)])).unwrap(),
+            b"\x83\x6C\x00\x00\x00\x01\x62\x80\x00\x00\x00\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangString(b"test".to_vec())])).unwrap(),
+            b"\x83\x6C\x00\x00\x00\x01\x6B\x00\x04\x74\x65\x73\x74\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangInteger(373),
+                OtpErlangTerm::OtpErlangInteger(455)])).unwrap(),
+            [b"\x83\x6C\x00\x00\x00\x02\x62\x00\x00\x01",
+             b"\x75\x62\x00\x00\x01\xC7\x6A".to_vec().as_slice()].concat());
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangList(vec![])])).unwrap(),
+            b"\x83\x6C\x00\x00\x00\x01\x6A\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangList(vec![]),
+                OtpErlangTerm::OtpErlangList(vec![])])).unwrap(),
+            b"\x83\x6C\x00\x00\x00\x02\x6A\x6A\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangList(vec![
+                    OtpErlangTerm::OtpErlangString(b"this".to_vec()),
+                    OtpErlangTerm::OtpErlangString(b"is".to_vec())]),
+                OtpErlangTerm::OtpErlangList(vec![
+                    OtpErlangTerm::OtpErlangList(vec![
+                        OtpErlangTerm::OtpErlangString(b"a".to_vec())])]),
+                OtpErlangTerm::OtpErlangString(b"test".to_vec()),
+            ])).unwrap(),
+            vec![
+                b"\x83\x6C\x00\x00\x00\x03\x6C\x00".to_vec(),
+                b"\x00\x00\x02\x6B\x00\x04\x74\x68".to_vec(),
+                b"\x69\x73\x6B\x00\x02\x69\x73\x6A".to_vec(),
+                b"\x6C\x00\x00\x00\x01\x6C\x00\x00".to_vec(),
+                b"\x00\x01\x6B\x00\x01\x61\x6A\x6A".to_vec(),
+                b"\x6B\x00\x04\x74\x65\x73\x74\x6A".to_vec(),
+            ].into_iter().flatten().collect::<Vec<u8>>().as_slice());
+    }
+
+    #[test]
+    fn test_encode_list() {
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangList(vec![])])).unwrap(),
+            b"\x83l\x00\x00\x00\x01jj");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangList(vec![
+                OtpErlangTerm::OtpErlangList(vec![]),
+                OtpErlangTerm::OtpErlangList(vec![]),
+                OtpErlangTerm::OtpErlangList(vec![]),
+                OtpErlangTerm::OtpErlangList(vec![]),
+                OtpErlangTerm::OtpErlangList(vec![])])).unwrap(),
+            b"\x83l\x00\x00\x00\x05jjjjjj");
+    }
+
+    #[test]
+    fn test_encode_improper_list() {
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangListImproper(vec![
+                OtpErlangTerm::OtpErlangTuple(vec![]),
+                OtpErlangTerm::OtpErlangTuple(vec![])])).unwrap(),
+            b"\x83l\x00\x00\x00\x01h\x00h\x00");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangListImproper(vec![
+                OtpErlangTerm::OtpErlangInteger(0),
+                OtpErlangTerm::OtpErlangInteger(1)])).unwrap(),
+            b"\x83l\x00\x00\x00\x01a\x00a\x01");
+    }
+
+    #[test]
+    fn test_encode_unicode() {
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"".to_vec())).unwrap(),
+            b"\x83j");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"test".to_vec())).unwrap(),
+            b"\x83k\x00\x04test");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"\x00\xc3\xbf".to_vec())).unwrap(),
+            b"\x83k\x00\x03\x00\xc3\xbf");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"\xc4\x80".to_vec())).unwrap(),
+            b"\x83k\x00\x02\xc4\x80");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"\xd1\x82\xd0\xb5\xd1\x81\xd1\x82".to_vec())).unwrap(),
+            b"\x83k\x00\x08\xd1\x82\xd0\xb5\xd1\x81\xd1\x82");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"\xd0\x90".repeat(65536).as_slice().to_vec())).unwrap(),
+            vec![
+                b"\x83l\x00\x02\x00\x00".to_vec(),
+                b"a\xd0a\x90".repeat(65536).as_slice().to_vec(),
+                b"j".to_vec(),
+            ].into_iter().flatten().collect::<Vec<u8>>().as_slice());
+    }
+
+    #[test]
+    fn test_encode_atom() {
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangAtom(
+                b"".to_vec())).unwrap(),
+            b"\x83s\x00");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangAtom(
+                b"test".to_vec())).unwrap(),
+            b"\x83s\x04test");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangAtomUTF8(
+                b"".to_vec())).unwrap(),
+            b"\x83w\x00");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangAtomUTF8(
+                b"test".to_vec())).unwrap(),
+            b"\x83w\x04test");
+    }
+
+    #[test]
+    fn test_encode_string_basic() {
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"".to_vec())).unwrap(),
+            b"\x83\x6A");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"test".to_vec())).unwrap(),
+            b"\x83\x6B\x00\x04\x74\x65\x73\x74");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"two words".to_vec())).unwrap(),
+            b"\x83\x6B\x00\x09\x74\x77\x6F\x20\x77\x6F\x72\x64\x73");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"testing multiple words".to_vec())).unwrap(),
+            vec![
+                b"\x83\x6B\x00\x16\x74\x65\x73\x74\x69\x6E".to_vec(),
+                b"\x67\x20\x6D\x75\x6C\x74\x69\x70\x6C\x65".to_vec(),
+                b"\x20\x77\x6F\x72\x64\x73".to_vec(),
+            ].into_iter().flatten().collect::<Vec<u8>>().as_slice());
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b" ".to_vec())).unwrap(),
+            b"\x83\x6B\x00\x01\x20");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"  ".to_vec())).unwrap(),
+            b"\x83\x6B\x00\x02\x20\x20");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"1".to_vec())).unwrap(),
+            b"\x83\x6B\x00\x01\x31");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"37".to_vec())).unwrap(),
+            b"\x83\x6B\x00\x02\x33\x37");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"one = 1".to_vec())).unwrap(),
+            b"\x83\x6B\x00\x07\x6F\x6E\x65\x20\x3D\x20\x31");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"!@#$%^&*()_+-=[]{}\\|;':\",./<>?~`".to_vec())).unwrap(),
+            vec![
+                b"\x83\x6B\x00\x20\x21\x40\x23\x24\x25\x5E\x26\x2A".to_vec(),
+                b"\x28\x29\x5F\x2B\x2D\x3D\x5B\x5D\x7B\x7D\x5C\x7C".to_vec(),
+                b"\x3B\x27\x3A\x22\x2C\x2E\x2F\x3C\x3E\x3F\x7E\x60".to_vec(),
+            ].into_iter().flatten().collect::<Vec<u8>>().as_slice());
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"\"\x08\x0c\n\r\t\x0bS\x12".to_vec())).unwrap(),
+            b"\x83\x6B\x00\x09\x22\x08\x0C\x0A\x0D\x09\x0B\x53\x12");
+    }
+
+    #[test]
+    fn test_encode_string() {
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"".to_vec())).unwrap(),
+            b"\x83j");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangString(
+                b"test".to_vec())).unwrap(),
+            b"\x83k\x00\x04test");
+    }
+
+    #[test]
+    fn test_encode_boolean() {
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangAtomBool(true)).unwrap(),
+            b"\x83w\x04true");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangAtomBool(false)).unwrap(),
+            b"\x83w\x05false");
+    }
+
+    #[test]
+    fn test_encode_small_integer() {
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangInteger(0)).unwrap(),
+            b"\x83a\x00");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangInteger(255)).unwrap(),
+            b"\x83a\xff");
+    }
+
+    #[test]
+    fn test_encode_integer() {
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangInteger(-1)).unwrap(),
+            b"\x83b\xff\xff\xff\xff");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangInteger(i32::MIN)).unwrap(),
+            b"\x83b\x80\x00\x00\x00");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangInteger(256)).unwrap(),
+            b"\x83b\x00\x00\x01\x00");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangInteger(i32::MAX)).unwrap(),
+            b"\x83b\x7f\xff\xff\xff");
+    }
+
+    #[test]
+    fn test_encode_float() {
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangFloat(
+                0.0.into())).unwrap(),
+            b"\x83F\x00\x00\x00\x00\x00\x00\x00\x00");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangFloat(
+                0.5.into())).unwrap(),
+            b"\x83F?\xe0\x00\x00\x00\x00\x00\x00");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangFloat(
+                (-0.5).into())).unwrap(),
+            b"\x83F\xbf\xe0\x00\x00\x00\x00\x00\x00");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangFloat(
+                3.1415926.into())).unwrap(),
+            b"\x83F@\t!\xfbM\x12\xd8J");
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangFloat(
+                (-3.1415926).into())).unwrap(),
+            b"\x83F\xc0\t!\xfbM\x12\xd8J");
+    }
+
+    #[test]
+    fn test_encode_map() {
+        assert_eq!(
+            term_to_binary(
+                &OtpErlangTerm::OtpErlangMap(BTreeMap::new())).unwrap(),
+            b"\x83t\x00\x00\x00\x00");
+        let mut map1 = BTreeMap::new();
+        map1.insert(OtpErlangTerm::OtpErlangAtom(b"a".to_vec()),
+                    OtpErlangTerm::OtpErlangInteger(1));
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangMap(map1)).unwrap(),
+            b"\x83t\x00\x00\x00\x01s\x01aa\x01");
+    }
 }
 
