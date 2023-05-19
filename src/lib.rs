@@ -1,6 +1,11 @@
 //-*-Mode:rust;coding:utf-8;tab-width:4;c-basic-offset:4;indent-tabs-mode:()-*-
 //ex: set ft=rust fenc=utf-8 sts=4 ts=4 sw=4 et nomod:
 
+//! # Erlang External Term Format Encoding/Decoding
+//!
+//! Provides all encoding and decoding for the Erlang External Term Format
+//! (as defined at [https://erlang.org/doc/apps/erts/erl_ext_dist.html](https://erlang.org/doc/apps/erts/erl_ext_dist.html)).
+
 // MIT License
 //
 // Copyright (c) 2023 Michael Truog <mjtruog at protonmail dot com>
@@ -63,6 +68,7 @@ const TAG_SMALL_ATOM_UTF8_EXT: u8 = 119;
 const TAG_V4_PORT_EXT: u8 = 120;
 const TAG_LOCAL_EXT: u8 = 121;
 
+/// f64 comparable data for [`OtpErlangTerm::OtpErlangFloat`]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Float {
     bits: u64,
@@ -82,6 +88,7 @@ impl From<f64> for Float {
     }
 }
 
+/// Pid data for [`OtpErlangTerm::OtpErlangPid`]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Pid {
     node_tag: u8,
@@ -91,6 +98,7 @@ pub struct Pid {
     creation: Vec<u8>,
 }
 
+/// Port data for [`OtpErlangTerm::OtpErlangPort`]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Port {
     node_tag: u8,
@@ -99,6 +107,7 @@ pub struct Port {
     creation: Vec<u8>,
 }
 
+/// Reference data for [`OtpErlangTerm::OtpErlangReference`]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Reference {
     node_tag: u8,
@@ -107,12 +116,14 @@ pub struct Reference {
     creation: Vec<u8>,
 }
 
+/// Function data for [`OtpErlangTerm::OtpErlangFunction`]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Function {
     tag: u8,
     value: Vec<u8>,
 }
 
+/// Erlang term representation
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum OtpErlangTerm {
     OtpErlangInteger(i32),
@@ -134,14 +145,15 @@ pub enum OtpErlangTerm {
     OtpErlangFunction(Function),
 }
 
+/// Error description
 #[derive(Debug, Eq, PartialEq)]
 pub enum ErrorKind {
-    InputError(&'static str),
     OutputError(&'static str),
     ParseError(&'static str),
     UnexpectedError(),
 }
 
+/// Error data
 #[derive(Debug)]
 pub struct Error {
     kind: ErrorKind,
@@ -174,7 +186,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match &self.source {
             None => None,
-            Some(e) => Some(&**e)
+            Some(e) => Some(&**e),
         }
     }
 }
@@ -288,6 +300,7 @@ fn unpack_f64(i: &mut usize, data: &[u8]) -> Result<f64> {
     ))
 }
 
+/// decodes the Erlang External Term Format into [`OtpErlangTerm`]
 pub fn binary_to_term(data: &[u8]) -> Result<OtpErlangTerm> {
     let size = data.len();
     if size <= 1 {
@@ -306,6 +319,7 @@ pub fn binary_to_term(data: &[u8]) -> Result<OtpErlangTerm> {
     }
 }
 
+/// encodes [`OtpErlangTerm`] into the Erlang External Term Format
 pub fn term_to_binary(term: &OtpErlangTerm) -> Result<Vec<u8>> {
     let mut data: Vec<u8> = Vec::new();
     data.push(TAG_VERSION);
@@ -1042,6 +1056,14 @@ mod tests {
         let port_new = binary_to_term(port_new_binary.as_slice()).unwrap();
         assert_eq!(term_to_binary(&port_new).unwrap(),
                    port_new_binary.as_slice());
+        let port_v4_binary = vec![
+            b"\x83\x78\x77\x0D\x6E\x6F\x6E\x6F\x64\x65\x40".to_vec(),
+            b"\x6E\x6F\x68\x6F\x73\x74\x00\x00\x00\x00\x00".to_vec(),
+            b"\x00\x00\x04\x00\x00\x00\x00".to_vec(),
+        ].into_iter().flatten().collect::<Vec<u8>>();
+        let port_v4 = binary_to_term(port_v4_binary.as_slice()).unwrap();
+        assert_eq!(term_to_binary(&port_v4).unwrap(),
+                   port_v4_binary.as_slice());
     }
 
     #[test]
@@ -1328,6 +1350,21 @@ mod tests {
         assert_eq!(
             binary_to_term(b"\x83t\x00\x00\x00\x01d\x00\x01aa\x01").unwrap(),
             OtpErlangTerm::OtpErlangMap(map1));
+        let mut map2 = BTreeMap::new();
+        map2.insert(OtpErlangTerm::OtpErlangBinaryBits(b"\xA8".to_vec(), 6),
+                    OtpErlangTerm::OtpErlangBinary(b"everything".to_vec()));
+        map2.insert(OtpErlangTerm::OtpErlangAtomUTF8(b"undefined".to_vec()),
+                    OtpErlangTerm::OtpErlangBinary(b"nothing".to_vec()));
+        let binary2 = vec![
+            b"\x83\x74\x00\x00\x00\x02\x77\x09\x75\x6E\x64\x65".to_vec(),
+            b"\x66\x69\x6E\x65\x64\x6D\x00\x00\x00\x07\x6E\x6F".to_vec(),
+            b"\x74\x68\x69\x6E\x67\x4D\x00\x00\x00\x01\x06\xA8".to_vec(),
+            b"\x6D\x00\x00\x00\x0A\x65\x76\x65\x72\x79\x74\x68".to_vec(),
+            b"\x69\x6E\x67".to_vec(),
+        ].into_iter().flatten().collect::<Vec<u8>>();
+        assert_eq!(
+            binary_to_term(binary2.as_slice()).unwrap(),
+            OtpErlangTerm::OtpErlangMap(map2));
     }
 
     #[test]
@@ -1702,6 +1739,22 @@ mod tests {
         assert_eq!(
             term_to_binary(&OtpErlangTerm::OtpErlangMap(map1)).unwrap(),
             b"\x83t\x00\x00\x00\x01s\x01aa\x01");
+        let mut map2 = BTreeMap::new();
+        map2.insert(OtpErlangTerm::OtpErlangBinaryBits(b"\xA8".to_vec(), 6),
+                    OtpErlangTerm::OtpErlangBinary(b"everything".to_vec()));
+        map2.insert(OtpErlangTerm::OtpErlangAtomUTF8(b"undefined".to_vec()),
+                    OtpErlangTerm::OtpErlangBinary(b"nothing".to_vec()));
+        assert_eq!(
+            term_to_binary(&OtpErlangTerm::OtpErlangMap(map2)).unwrap(),
+            vec![
+                b"\x83\x74\x00\x00\x00\x02\x77\x09".to_vec(),
+                b"\x75\x6E\x64\x65\x66\x69\x6E\x65".to_vec(),
+                b"\x64\x6D\x00\x00\x00\x07\x6E\x6F".to_vec(),
+                b"\x74\x68\x69\x6E\x67\x4D\x00\x00".to_vec(),
+                b"\x00\x01\x06\xA8\x6D\x00\x00\x00".to_vec(),
+                b"\x0A\x65\x76\x65\x72\x79\x74\x68".to_vec(),
+                b"\x69\x6E\x67".to_vec(),
+            ].into_iter().flatten().collect::<Vec<u8>>().as_slice());
     }
 }
 
