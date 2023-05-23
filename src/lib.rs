@@ -28,10 +28,12 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-#![crate_name = "erlang_rs"]
+#![crate_name = "erlang"]
 #![crate_type = "lib"]
 
 use std::collections::BTreeMap;
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 // tag values here http://www.erlang.org/doc/apps/erts/erl_ext_dist.html
 const TAG_VERSION: u8 = 131;
@@ -205,8 +207,6 @@ impl From<std::num::ParseFloatError> for Error {
         Error::new(error)
     }
 }
-
-pub type Result<T> = std::result::Result<T, Error>;
 
 fn slice_get<I>(data: &[u8], index: I) ->
 Result<&<I as std::slice::SliceIndex<[u8]>>::Output>
