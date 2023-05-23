@@ -5,7 +5,11 @@ Erlang External Term Format for Rust
 
 Provides all encoding and decoding for the Erlang External Term Format
 (as defined at [https://erlang.org/doc/apps/erts/erl_ext_dist.html](https://erlang.org/doc/apps/erts/erl_ext_dist.html))
-in a single Rust crate.
+in a single Rust crate.  Utilize with:
+
+```rust
+extern crate erlang;
+```
 
 Requires `Rust >= 1.56.1`
 
