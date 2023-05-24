@@ -218,86 +218,50 @@ where I: std::slice::SliceIndex<[u8]>, {
 }
 
 fn pack_u16(value: u16, data: &mut Vec<u8>) {
-    let byte0 = (value >> 8) as u8;
-    let byte1 = (value & 0xff) as u8;
-    data.push(byte0);
-    data.push(byte1);
+    data.extend_from_slice(&value.to_be_bytes());
 }
 
 fn pack_u32(value: u32, data: &mut Vec<u8>) {
-    let byte0 = (value >> 24) as u8;
-    let byte1 = ((value >> 16) & 0xff) as u8;
-    let byte2 = ((value >> 8) & 0xff) as u8;
-    let byte3 = (value & 0xff) as u8;
-    data.push(byte0);
-    data.push(byte1);
-    data.push(byte2);
-    data.push(byte3);
+    data.extend_from_slice(&value.to_be_bytes());
 }
 
 fn pack_u64(value: u64, data: &mut Vec<u8>) {
-    let byte0 = (value >> 56) as u8;
-    let byte1 = ((value >> 48) & 0xff) as u8;
-    let byte2 = ((value >> 40) & 0xff) as u8;
-    let byte3 = ((value >> 32) & 0xff) as u8;
-    let byte4 = ((value >> 24) & 0xff) as u8;
-    let byte5 = ((value >> 16) & 0xff) as u8;
-    let byte6 = ((value >> 8) & 0xff) as u8;
-    let byte7 = (value & 0xff) as u8;
-    data.push(byte0);
-    data.push(byte1);
-    data.push(byte2);
-    data.push(byte3);
-    data.push(byte4);
-    data.push(byte5);
-    data.push(byte6);
-    data.push(byte7);
+    data.extend_from_slice(&value.to_be_bytes());
 }
 
 fn unpack_u16(i: &mut usize, data: &[u8]) -> Result<u16> {
-    let byte0 = *slice_get(data, *i)?;
-    let byte1 = *slice_get(data, *i + 1)?;
+    let bytes: [u8; 2] = [
+        *slice_get(data, *i)?,
+        *slice_get(data, *i + 1)?,
+    ];
     *i += 2;
-    Ok(
-        ((byte0 as u16) << 8) |
-        (byte1 as u16)
-    )
+    Ok(u16::from_be_bytes(bytes))
 }
 
 fn unpack_u32(i: &mut usize, data: &[u8]) -> Result<u32> {
-    let byte0 = *slice_get(data, *i)?;
-    let byte1 = *slice_get(data, *i + 1)?;
-    let byte2 = *slice_get(data, *i + 2)?;
-    let byte3 = *slice_get(data, *i + 3)?;
+    let bytes: [u8; 4] = [
+        *slice_get(data, *i)?,
+        *slice_get(data, *i + 1)?,
+        *slice_get(data, *i + 2)?,
+        *slice_get(data, *i + 3)?,
+    ];
     *i += 4;
-    Ok(
-        ((byte0 as u32) << 24) |
-        ((byte1 as u32) << 16) |
-        ((byte2 as u32) << 8) |
-        (byte3 as u32)
-    )
+    Ok(u32::from_be_bytes(bytes))
 }
 
 fn unpack_f64(i: &mut usize, data: &[u8]) -> Result<f64> {
-    let byte0 = *slice_get(data, *i)?;
-    let byte1 = *slice_get(data, *i + 1)?;
-    let byte2 = *slice_get(data, *i + 2)?;
-    let byte3 = *slice_get(data, *i + 3)?;
-    let byte4 = *slice_get(data, *i + 4)?;
-    let byte5 = *slice_get(data, *i + 5)?;
-    let byte6 = *slice_get(data, *i + 6)?;
-    let byte7 = *slice_get(data, *i + 7)?;
+    let bytes: [u8; 8] = [
+        *slice_get(data, *i)?,
+        *slice_get(data, *i + 1)?,
+        *slice_get(data, *i + 2)?,
+        *slice_get(data, *i + 3)?,
+        *slice_get(data, *i + 4)?,
+        *slice_get(data, *i + 5)?,
+        *slice_get(data, *i + 6)?,
+        *slice_get(data, *i + 7)?,
+    ];
     *i += 8;
-    Ok(f64::from_bits(
-        ((byte0 as u64) << 56) |
-        ((byte1 as u64) << 48) |
-        ((byte2 as u64) << 40) |
-        ((byte3 as u64) << 32) |
-        ((byte4 as u64) << 24) |
-        ((byte5 as u64) << 16) |
-        ((byte6 as u64) << 8) |
-        (byte7 as u64)
-    ))
+    Ok(f64::from_bits(u64::from_be_bytes(bytes)))
 }
 
 /// decodes the Erlang External Term Format into [`OtpErlangTerm`]
