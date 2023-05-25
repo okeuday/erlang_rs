@@ -230,36 +230,19 @@ fn pack_u64(value: u64, data: &mut Vec<u8>) {
 }
 
 fn unpack_u16(i: &mut usize, data: &[u8]) -> Result<u16> {
-    let bytes: [u8; 2] = [
-        *slice_get(data, *i)?,
-        *slice_get(data, *i + 1)?,
-    ];
+    let bytes: [u8; 2] = (slice_get(data, *i..*i + 2)?).try_into().unwrap();
     *i += 2;
     Ok(u16::from_be_bytes(bytes))
 }
 
 fn unpack_u32(i: &mut usize, data: &[u8]) -> Result<u32> {
-    let bytes: [u8; 4] = [
-        *slice_get(data, *i)?,
-        *slice_get(data, *i + 1)?,
-        *slice_get(data, *i + 2)?,
-        *slice_get(data, *i + 3)?,
-    ];
+    let bytes: [u8; 4] = (slice_get(data, *i..*i + 4)?).try_into().unwrap();
     *i += 4;
     Ok(u32::from_be_bytes(bytes))
 }
 
 fn unpack_f64(i: &mut usize, data: &[u8]) -> Result<f64> {
-    let bytes: [u8; 8] = [
-        *slice_get(data, *i)?,
-        *slice_get(data, *i + 1)?,
-        *slice_get(data, *i + 2)?,
-        *slice_get(data, *i + 3)?,
-        *slice_get(data, *i + 4)?,
-        *slice_get(data, *i + 5)?,
-        *slice_get(data, *i + 6)?,
-        *slice_get(data, *i + 7)?,
-    ];
+    let bytes: [u8; 8] = (slice_get(data, *i..*i + 8)?).try_into().unwrap();
     *i += 8;
     Ok(f64::from_bits(u64::from_be_bytes(bytes)))
 }
